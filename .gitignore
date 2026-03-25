@@ -1,0 +1,48 @@
+# Environment variables
+.env
+
+# Data files
+/sap-o2c-data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.venv/
+
+# Database
+*.db
+
+# Backend cache
+backend/graph_cache.json
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs / Debug
+err.txt
+*.log
+
+# Schema dumps
+schema_dump.json
+schema_dump.txt

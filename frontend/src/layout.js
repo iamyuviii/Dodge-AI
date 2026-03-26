@@ -9,7 +9,7 @@ export function applyDagreLayout(nodes, edges, direction = 'LR') {
   const nodeHeight = 80;
 
   const isHorizontal = direction === 'LR' || direction === 'RL';
-  dagreGraph.setGraph({ rankdir: direction, ranksep: 100, nodesep: 50 });
+  dagreGraph.setGraph({ rankdir: direction, ranksep: 220, nodesep: 90 });
 
   nodes.forEach((node) => {
     dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });

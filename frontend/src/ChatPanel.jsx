@@ -5,9 +5,7 @@ import axios from 'axios'
 const SUGGESTIONS = [
   'Which products are associated with the highest number of billing documents?',
   'Trace the full flow of billing document INV001 (Sales Order → Delivery → Invoice → Payment)',
-  'Find sales orders with incomplete flows (delivered but not billed, or billed without delivery)',
-  'Which customers have the highest order value?',
-  'Show all unpaid invoices',
+  'Which customers have the highest order value?'
 ]
 
 function TypingIndicator() {
@@ -57,7 +55,7 @@ function DataTable({ rows }) {
   )
 }
 
-export default function ChatPanel() {
+export default function ChatPanel({ onHighlightsChange }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -92,6 +90,25 @@ export default function ChatPanel() {
         sql,
         data: data || [],
       }])
+
+      if (onHighlightsChange) {
+        const ids = new Set()
+        if (data) {
+          const mapColumnToPrefix = {
+            customer_id: 'C:', address_id: 'A:', order_id: 'SO:',
+            item_id: 'OI:', product_id: 'P:', delivery_id: 'D:',
+            invoice_id: 'INV:', payment_id: 'PAY:'
+          }
+          data.forEach(row => {
+            Object.entries(row).forEach(([k, v]) => {
+              if (mapColumnToPrefix[k] && v) {
+                ids.add(mapColumnToPrefix[k] + v)
+              }
+            })
+          })
+        }
+        onHighlightsChange(ids)
+      }
     } catch (err) {
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -134,21 +151,23 @@ export default function ChatPanel() {
       </div>
 
       {/* Suggestions */}
-      <div className="suggestions">
-        <div className="suggestions-title">Try asking</div>
-        <div className="suggestion-chips">
-          {SUGGESTIONS.map((s, i) => (
-            <button
-              key={i}
-              className="suggestion-chip"
-              onClick={() => sendMessage(s)}
-              disabled={loading}
-            >
-              {s}
-            </button>
-          ))}
+      {input.trim() === '' && messages.length === 1 && (
+        <div className="suggestions">
+          <div className="suggestions-title">Try asking</div>
+          <div className="suggestion-chips">
+            {SUGGESTIONS.map((s, i) => (
+              <button
+                key={i}
+                className="suggestion-chip"
+                onClick={() => sendMessage(s)}
+                disabled={loading}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Messages */}
       <div className="messages-area">

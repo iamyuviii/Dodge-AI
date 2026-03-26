@@ -27,6 +27,12 @@ Due to the sheer amount of code, the application was split into two primary doma
 ### Integration Prompt (LLM & Chat)
 > "Integrate the Groq API (LLaMA 3 70B) in `/api/chat`. The LLM needs context about the SAP O2C data so that users can ask deep business queries. Write a system prompt for the Groq client that provides it with the database schema and instructs it to act as a data-backed business insights tool."
 
+### Conversational / Human-Like Iteration Prompts
+> "Hey, the chat panel looks a bit squished on smaller screens. Can we make it a drawer that slides in from the right instead of taking up half the screen?"
+> "The LLM keeps returning markdown formatting like \`\`\`sql inside the data stream, which breaks my Python execution. How do I parse that out safely with regex?"
+> "Can we add styling to the ReactFlow nodes so that Orders are blue, Payments are green, and Invoices are red? Make them pop out a bit more with a drop shadow or hover effect."
+> "I noticed that sometimes the AI tries to fetch the entire database if someone asks a broad question. We need it to limit the returned rows to 50 so it doesn't crash the server. Can you fix the Groq prompt rules?"
+
 ---
 
 ## 3. Iteration and Debugging Workflows
@@ -48,6 +54,12 @@ Due to the sheer amount of code, the application was split into two primary doma
 - **AI Debugging Workflow**:
   - *Prompt*: "Deploy this project to Render. Configure the frontend to point to the production backend URL."
   - *Solution*: We completely parameterized `main.jsx` with `axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL` and created a free-tier Render backend/frontend deployment.
+
+### Iteration 4: LLM Guardrails & Prompt Formatting
+- **Problem**: The Groq API occasionally generated conversational text before the SQL or attempted to fetch unstructured data, which caused the pipeline to fail or resulted in missing row caps.
+- **AI Debugging Workflow**:
+  - *Prompt*: "Fix the groq prompts and rules, because in some cases it is giving wrong answers. Like, we have restricted the limit to 50 but it ignores it. I have added some changes, look into them and check any other issues that can cause this."
+  - *Solution*: Modified the `SQL_GEN_PROMPT` to strictly enforce `LIMIT 50` on non-aggregation queries. We also implemented robust regex extractions to strip markdown code blocks systematically before executing the query, and bounded the Python summarizer context window so the final AI answer works flawlessly.
 
 ---
 

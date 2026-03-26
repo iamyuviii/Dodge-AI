@@ -1,22 +1,26 @@
 // CustomNode.jsx — Redesigned React Flow node (larger, cleaner, less congested)
 import { Handle, Position } from 'reactflow'
-import {memo} from 'react'
+import {memo, useContext} from 'react'
+import { HighlightContext } from './App'
 
 const NODE_COLORS = {
-  Customer:   { bg: '#6366f1', light: '#818cf820', border: '#6366f140' },
-  Address:    { bg: '#8b5cf6', light: '#8b5cf620', border: '#8b5cf640' },
-  SalesOrder: { bg: '#0ea5e9', light: '#0ea5e920', border: '#0ea5e940' },
-  OrderItem:  { bg: '#38bdf8', light: '#38bdf820', border: '#38bdf840' },
-  Product:    { bg: '#10b981', light: '#10b98120', border: '#10b98140' },
-  Delivery:   { bg: '#f59e0b', light: '#f59e0b20', border: '#f59e0b40' },
-  Invoice:    { bg: '#ef4444', light: '#ef444420', border: '#ef444440' },
-  Payment:    { bg: '#22c55e', light: '#22c55e20', border: '#22c55e40' },
+  Customer:   { bg: '#3b82f6', light: '#3b82f61a', border: '#3b82f633' },
+  Address:    { bg: '#a855f7', light: '#a855f71a', border: '#a855f733' },
+  SalesOrder: { bg: '#0ea5e9', light: '#0ea5e91a', border: '#0ea5e933' },
+  OrderItem:  { bg: '#64748b', light: '#64748b1a', border: '#64748b33' },
+  Product:    { bg: '#22c55e', light: '#22c55e1a', border: '#22c55e33' },
+  Delivery:   { bg: '#eab308', light: '#eab3081a', border: '#eab30833' },
+  Invoice:    { bg: '#ef4444', light: '#ef44441a', border: '#ef444433' },
+  Payment:    { bg: '#10b981', light: '#10b9811a', border: '#10b98133' },
 }
 
-const DEFAULT_COLOR = { bg: '#6366f1', light: '#6366f120', border: '#6366f140' }
+const DEFAULT_COLOR = { bg: '#64748b', light: '#64748b1a', border: '#64748b33' }
 
-function CustomNode({ data, selected }) {
+function CustomNode({ data, selected, id }) {
   const clr = NODE_COLORS[data.node_type] || DEFAULT_COLOR
+
+  const highlightIds = useContext(HighlightContext)
+  const isHighlighted = highlightIds?.has(id) || false
 
   // Top 2 meta rows only, skip nulls
   const metaRows = Object.entries(data.meta || {})
@@ -25,7 +29,7 @@ function CustomNode({ data, selected }) {
 
   return (
     <div
-      className={`custom-node${selected ? ' selected' : ''}`}
+      className={`custom-node${selected ? ' selected' : ''}${isHighlighted ? ' highlighted' : ''}`}
       style={{
         '--node-color': clr.bg,
         '--node-light': clr.light,
@@ -36,15 +40,12 @@ function CustomNode({ data, selected }) {
       <Handle
         type="target"
         position={Position.Left}
-        style={{ background: clr.bg, width: 10, height: 10, border: '2px solid #0a0e1a', left: -5 }}
+        style={{ background: clr.bg, width: 6, height: 6, border: 'none', left: -3 }}
       />
 
-      {/* Colour accent strip */}
-      <div className="node-strip" style={{ background: clr.bg }} />
-
       <div className="node-header">
-        <div className="node-icon" style={{ background: clr.light, border: `1px solid ${clr.border}` }}>
-          <span style={{ fontSize: 16 }}>{data.icon || '⬡'}</span>
+        <div className="node-icon" style={{ color: clr.bg }}>
+          <span style={{ fontSize: 14 }}>{data.icon || '⬡'}</span>
         </div>
         <div className="node-title-group">
           <div className="node-title" title={data.label}>{data.label}</div>
@@ -85,7 +86,7 @@ function CustomNode({ data, selected }) {
       <Handle
         type="source"
         position={Position.Right}
-        style={{ background: clr.bg, width: 10, height: 10, border: '2px solid #0a0e1a', right: -5 }}
+        style={{ background: clr.bg, width: 6, height: 6, border: 'none', right: -3 }}
       />
     </div>
   )

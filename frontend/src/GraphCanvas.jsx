@@ -19,14 +19,14 @@ import { applyDagreLayout } from './layout'
 const nodeTypes = { customNode: CustomNode }
 
 const NODE_COLORS = {
-  Customer:   '#6366f1',
-  Address:    '#8b5cf6',
+  Customer:   '#3b82f6',
+  Address:    '#a855f7',
   SalesOrder: '#0ea5e9',
-  OrderItem:  '#38bdf8',
-  Product:    '#10b981',
-  Delivery:   '#f59e0b',
+  OrderItem:  '#64748b',
+  Product:    '#22c55e',
+  Delivery:   '#eab308',
   Invoice:    '#ef4444',
-  Payment:    '#22c55e',
+  Payment:    '#10b981',
 }
 
 const LEGEND_ITEMS = [
@@ -221,6 +221,8 @@ export default function GraphCanvas() {
         nodesDraggable
         nodesConnectable={false}
         elementsSelectable
+        panOnScroll={true}
+        zoomActivationKeyCode="Control"
       >
         <Background variant={BackgroundVariant.Dots} color="#1a2340" gap={24} size={1.2} />
         <Controls showInteractive={false} />

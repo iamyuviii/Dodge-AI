@@ -1,11 +1,14 @@
 // App.jsx — Root layout
-import { useState, useEffect } from 'react'
+import { useState, useEffect, createContext } from 'react'
 import axios from 'axios'
 import GraphCanvas from './GraphCanvas'
 import ChatPanel from './ChatPanel'
 
+export const HighlightContext = createContext(new Set())
+
 export default function App() {
   const [stats, setStats] = useState({ nodes: '…', edges: '…', status: 'checking' })
+  const [highlightIds, setHighlightIds] = useState(new Set())
 
   useEffect(() => {
     axios.get('/api/health')
@@ -14,12 +17,13 @@ export default function App() {
   }, [])
 
   return (
+    <HighlightContext.Provider value={highlightIds}>
     <div className="app-shell">
       {/* Header */}
       <header className="header">
         <div className="header-logo">
-          <div className="header-logo-icon">🕸</div>
-          <span className="header-title">Context Graph</span>
+            {/* <div className="header-logo-icon">🕸</div> */}
+            <span className="header-title">Dodge Graph</span>
           <span className="header-subtitle">Business Intelligence Explorer</span>
         </div>
 
@@ -42,8 +46,9 @@ export default function App() {
       {/* Main */}
       <div className="main-layout">
         <GraphCanvas />
-        <ChatPanel />
+          <ChatPanel onHighlightsChange={setHighlightIds} />
       </div>
     </div>
+    </HighlightContext.Provider>
   )
 }

@@ -49,15 +49,15 @@ SQL_GEN_PROMPT = f"""You are an expert SQLite query generator for a business dat
 {SCHEMA}
 
 Rules:
-1. Generate ONLY a single valid SQLite SELECT query — nothing else.
-2. Do NOT include explanations, markdown fences, or comments.
+1. Generate ONLY a single valid SQLite SELECT query — nothing else. Keep your output to just the query itself, with no text preamble or postamble.
+2. Do NOT include markdown fences (```) or comments around the query.
 3. Use exact table and column names from the schema above.
-4. Limit results to at most 50 rows unless the user asks for everything.
-5. If the question cannot be answered with the available schema, output: CANNOT_ANSWER
+4. ALWAYS append "LIMIT 50" to the query to restrict the number of results, UNLESS the user explicitly asks for all records OR the query is an aggregation (like COUNT, SUM) that naturally returns one row.
+5. If the question cannot be answered with the available schema, output EXACTLY the phrase: CANNOT_ANSWER
 6. Never run INSERT, UPDATE, DELETE, DROP, or any write operation.
 
 Example 1: "Which products are associated with the highest number of billing documents?"
-SELECT p.product_name, COUNT(i.invoice_id) as num_invoices FROM products p JOIN order_items oi ON p.product_id = oi.product_id JOIN invoices i ON oi.order_id = i.order_id GROUP BY p.product_id ORDER BY num_invoices DESC LIMIT 10;
+SELECT p.product_name, COUNT(i.invoice_id)   as num_invoices FROM products p JOIN order_items oi ON p.product_id = oi.product_id JOIN invoices i ON oi.order_id = i.order_id GROUP BY p.product_id ORDER BY num_invoices DESC LIMIT 10;
 
 Example 2: "Trace the full flow of billing document INV001"
 SELECT so.order_id, d.delivery_id, i.invoice_id, p.payment_id FROM invoices i LEFT JOIN sales_orders so ON i.order_id = so.order_id LEFT JOIN deliveries d ON i.delivery_id = d.delivery_id LEFT JOIN payments p ON i.invoice_id = p.invoice_id WHERE i.invoice_id = 'INV001';
@@ -95,7 +95,7 @@ def _is_on_topic(message: str) -> bool:
         {"role": "system", "content": GUARDRAIL_PROMPT},
         {"role": "user",   "content": message},
     ])
-    return reply.upper().startswith("YES")
+    return reply.strip().upper().startswith("YES")
 
 
 def _generate_sql(message: str) -> str:
@@ -121,13 +121,13 @@ def _execute_sql(sql: str) -> tuple[list[dict], str | None]:
 
 
 def _summarise(question: str, sql: str, rows: list[dict]) -> str:
-    data_str = json.dumps(rows[:30], indent=2, default=str)
+    data_str = json.dumps(rows[:50], indent=2, default=str)
     return _chat([
         {"role": "system", "content": ANSWER_PROMPT},
         {"role": "user",   "content": (
             f"User question: {question}\n\n"
             f"SQL used:\n{sql}\n\n"
-            f"Query results ({len(rows)} rows):\n{data_str}"
+            f"Query results ({len(rows)} matching rows total, showing up to {min(len(rows), 50)}):\n{data_str}"
         )},
     ], temperature=0.3)
 
@@ -175,7 +175,13 @@ def answer_query(message: str) -> dict:
         }
 
     # Clean up potential markdown fences (model might still wrap)
-    sql = re.sub(r"```(?:sql)?", "", sql).strip().strip("`")
+    sql = sql.strip()
+    match = re.search(r"```[a-zA-Z]*\n?(.*?)\n?```", sql, re.DOTALL)
+    if match:
+        sql = match.group(1).strip()
+    else:
+        sql = re.sub(r"```[a-zA-Z]*", "", sql).strip().strip("`")
+    sql = sql.strip()
 
     if sql.upper().startswith("CANNOT_ANSWER"):
         return {

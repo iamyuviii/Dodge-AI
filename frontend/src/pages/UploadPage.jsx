@@ -75,7 +75,7 @@ export default function UploadPage() {
     <div className="upload-page">
       <nav className="landing-nav" style={{ position: 'relative', borderBottom: '1px solid var(--clr-border)' }}>
         <div className="landing-nav-logo" style={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
-          <span className="landing-nav-brand">Dodge Graph</span>
+          <span className="landing-nav-brand">Nexora</span>
         </div>
         <div className="landing-nav-links">
           <button className="landing-btn-ghost" onClick={() => navigate('/')}>← Home</button>

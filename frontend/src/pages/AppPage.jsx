@@ -24,7 +24,7 @@ export default function AppPage() {
       {/* Header */}
       <header className="header">
         <div className="header-logo" style={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
-          <span className="header-title">Dodge Graph</span>
+            <span className="header-title">Nexora</span>
           <span className="header-subtitle">Business Intelligence Explorer</span>
         </div>
 

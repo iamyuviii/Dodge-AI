@@ -49,8 +49,9 @@ export default function LandingPage() {
       {/* ── NAV ── */}
       <nav className="landing-nav">
         <div className="landing-nav-logo">
-          <span className="landing-nav-brand">Dodge Graph</span>
+          <span className="landing-nav-brand">Nexora</span>
         </div>
+
         <div className="landing-nav-links">
           <a href="#features" className="landing-nav-link">Features</a>
           <a href="#how-it-works" className="landing-nav-link">How it works</a>
@@ -201,13 +202,10 @@ export default function LandingPage() {
       {/* ── FOOTER ── */}
       <footer className="landing-footer">
         <div className="landing-footer-brand">
-          <span className="landing-nav-brand">Dodge Graph</span>
+          <span className="landing-nav-brand">Nexora</span>
           <span className="landing-footer-tagline">Business Intelligence Explorer</span>
         </div>
-        <div className="landing-footer-links">
-          <button className="landing-footer-link" onClick={() => navigate('/app')}>Live Demo</button>
-          <button className="landing-footer-link" onClick={() => navigate('/upload')}>Upload Data</button>
-        </div>
+
         <div className="landing-footer-copy">
           Powered by LLaMA 3 · Groq · FastAPI · React
         </div>

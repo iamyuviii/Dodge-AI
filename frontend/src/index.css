@@ -859,12 +859,18 @@ html, body {
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
-.landing-nav-logo { display: flex; align-items: center; gap: 10px; }
+.landing-nav-logo {
+  display: flex;
+  /* padding-left: 50px; */
+  align-items: center;
+  gap: 100px;
+}
 
 .landing-nav-brand {
-  font-size: 15px;
+  font-size: 25px;
   font-weight: 700;
   letter-spacing: -0.02em;
+  
   color: var(--clr-text);
 }
 

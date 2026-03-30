@@ -5,12 +5,14 @@ Endpoints:
   GET  /api/graph/expand   → neighbors of a node
   POST /api/chat           → LLM-powered natural-language query
   GET  /api/health         → health check
+  POST /api/upload         → upload CSV/Excel and rebuild graph
 """
 
 import sqlite3
 import json
+import shutil
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import networkx as nx
@@ -153,3 +155,42 @@ def reload_graph():
     global _graph
     _graph = build_graph()
     return {"nodes": _graph.number_of_nodes(), "edges": _graph.number_of_edges()}
+
+
+ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+
+@app.post("/api/upload")
+async def upload_data(file: UploadFile = File(...)):
+    """Accept a CSV or Excel file, save it to data/, re-run preprocessor, reload graph."""
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(400, f"Unsupported file type '{ext}'. Please upload CSV or Excel.")
+
+    # Save to data/ directory (overwrite any existing file)
+    data_dir = BASE_DIR.parent / "data"
+    data_dir.mkdir(exist_ok=True)
+
+    # Remove old files first
+    for old in data_dir.iterdir():
+        if old.suffix.lower() in ALLOWED_EXTENSIONS:
+            old.unlink()
+
+    dest = data_dir / file.filename
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    # Remove old DB so preprocessor rebuilds from scratch
+    if DB_PATH.exists():
+        DB_PATH.unlink()
+
+    # Rebuild database and graph
+    preprocess.run()
+    global _graph
+    _graph = build_graph()
+
+    return {
+        "status": "ok",
+        "filename": file.filename,
+        "nodes": _graph.number_of_nodes(),
+        "edges": _graph.number_of_edges(),
+    }

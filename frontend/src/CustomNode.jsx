@@ -1,7 +1,7 @@
 // CustomNode.jsx — Redesigned React Flow node (larger, cleaner, less congested)
 import { Handle, Position } from 'reactflow'
 import {memo, useContext} from 'react'
-import { HighlightContext } from './App'
+import { HighlightContext } from './pages/AppPage'
 
 const NODE_COLORS = {
   Customer:   { bg: '#3b82f6', light: '#3b82f61a', border: '#3b82f633' },

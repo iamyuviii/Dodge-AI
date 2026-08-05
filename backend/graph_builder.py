@@ -5,8 +5,11 @@ and serialises it to a React Flow-compatible JSON format.
 
 import sqlite3
 import json
+import logging
 import networkx as nx
 from pathlib import Path
+
+logger = logging.getLogger("nexora.graph")
 
 BASE_DIR = Path(__file__).parent
 DB_PATH  = BASE_DIR / "business.db"
@@ -26,99 +29,111 @@ NODE_STYLES = {
 }
 
 
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    """Check if a table exists in the database."""
+    cur = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    )
+    return cur.fetchone() is not None
+
+
+def _safe_rows(conn: sqlite3.Connection, table: str):
+    """Return all rows from a table, or an empty list if it doesn't exist."""
+    if not _table_exists(conn, table):
+        logger.warning("Table '%s' not found — skipping", table)
+        return []
+    return conn.execute(f"SELECT * FROM {table}").fetchall()
+
+
 def build_graph() -> nx.DiGraph:
     G = nx.DiGraph()
 
     if not DB_PATH.exists():
         return G
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
 
-    def rows(sql):
-        return conn.execute(sql).fetchall()
+        # ── Customers ──
+        for r in _safe_rows(conn, "customers"):
+            G.add_node(f"C:{r['customer_id']}",
+                       node_type="Customer",
+                       label=r['customer_name'] or r['customer_id'],
+                       **{k: r[k] for k in r.keys()})
 
-    # ── Customers ──
-    for r in rows("SELECT * FROM customers"):
-        G.add_node(f"C:{r['customer_id']}",
-                   node_type="Customer",
-                   label=r['customer_name'] or r['customer_id'],
-                   **{k: r[k] for k in r.keys()})
+        # ── Addresses ──
+        for r in _safe_rows(conn, "addresses"):
+            G.add_node(f"A:{r['address_id']}",
+                       node_type="Address",
+                       label=f"{r['city'] or ''}, {r['country'] or ''}".strip(', '),
+                       **{k: r[k] for k in r.keys()})
+            if r['customer_id']:
+                G.add_edge(f"C:{r['customer_id']}", f"A:{r['address_id']}",
+                           label="LOCATED_AT", edge_type="LOCATED_AT")
 
-    # ── Addresses ──
-    for r in rows("SELECT * FROM addresses"):
-        G.add_node(f"A:{r['address_id']}",
-                   node_type="Address",
-                   label=f"{r['city'] or ''}, {r['country'] or ''}".strip(', '),
-                   **{k: r[k] for k in r.keys()})
-        if r['customer_id']:
-            G.add_edge(f"C:{r['customer_id']}", f"A:{r['address_id']}",
-                       label="LOCATED_AT", edge_type="LOCATED_AT")
+        # ── Sales Orders ──
+        for r in _safe_rows(conn, "sales_orders"):
+            G.add_node(f"SO:{r['order_id']}",
+                       node_type="SalesOrder",
+                       label=f"SO {r['order_id']}",
+                       **{k: r[k] for k in r.keys()})
+            if r['customer_id']:
+                G.add_edge(f"C:{r['customer_id']}", f"SO:{r['order_id']}",
+                           label="PLACED_ORDER", edge_type="PLACED_ORDER")
 
-    # ── Sales Orders ──
-    for r in rows("SELECT * FROM sales_orders"):
-        G.add_node(f"SO:{r['order_id']}",
-                   node_type="SalesOrder",
-                   label=f"SO {r['order_id']}",
-                   **{k: r[k] for k in r.keys()})
-        if r['customer_id']:
-            G.add_edge(f"C:{r['customer_id']}", f"SO:{r['order_id']}",
-                       label="PLACED_ORDER", edge_type="PLACED_ORDER")
+        # ── Order Items ──
+        for r in _safe_rows(conn, "order_items"):
+            G.add_node(f"OI:{r['item_id']}",
+                       node_type="OrderItem",
+                       label=f"Item {r['item_id']}",
+                       **{k: r[k] for k in r.keys()})
+            if r['order_id']:
+                G.add_edge(f"SO:{r['order_id']}", f"OI:{r['item_id']}",
+                           label="HAS_ITEM", edge_type="HAS_ITEM")
+            if r['product_id']:
+                G.add_edge(f"OI:{r['item_id']}", f"P:{r['product_id']}",
+                           label="IS_PRODUCT", edge_type="IS_PRODUCT")
 
-    # ── Order Items ──
-    for r in rows("SELECT * FROM order_items"):
-        G.add_node(f"OI:{r['item_id']}",
-                   node_type="OrderItem",
-                   label=f"Item {r['item_id']}",
-                   **{k: r[k] for k in r.keys()})
-        if r['order_id']:
-            G.add_edge(f"SO:{r['order_id']}", f"OI:{r['item_id']}",
-                       label="HAS_ITEM", edge_type="HAS_ITEM")
-        if r['product_id']:
-            G.add_edge(f"OI:{r['item_id']}", f"P:{r['product_id']}",
-                       label="IS_PRODUCT", edge_type="IS_PRODUCT")
+        # ── Products ──
+        for r in _safe_rows(conn, "products"):
+            G.add_node(f"P:{r['product_id']}",
+                       node_type="Product",
+                       label=r['product_name'] or r['product_id'],
+                       **{k: r[k] for k in r.keys()})
 
-    # ── Products ──
-    for r in rows("SELECT * FROM products"):
-        G.add_node(f"P:{r['product_id']}",
-                   node_type="Product",
-                   label=r['product_name'] or r['product_id'],
-                   **{k: r[k] for k in r.keys()})
+        # ── Deliveries ──
+        for r in _safe_rows(conn, "deliveries"):
+            G.add_node(f"D:{r['delivery_id']}",
+                       node_type="Delivery",
+                       label=f"Delivery {r['delivery_id']}",
+                       **{k: r[k] for k in r.keys()})
+            if r['order_id']:
+                G.add_edge(f"SO:{r['order_id']}", f"D:{r['delivery_id']}",
+                           label="FULFILLED_BY", edge_type="FULFILLED_BY")
 
-    # ── Deliveries ──
-    for r in rows("SELECT * FROM deliveries"):
-        G.add_node(f"D:{r['delivery_id']}",
-                   node_type="Delivery",
-                   label=f"Delivery {r['delivery_id']}",
-                   **{k: r[k] for k in r.keys()})
-        if r['order_id']:
-            G.add_edge(f"SO:{r['order_id']}", f"D:{r['delivery_id']}",
-                       label="FULFILLED_BY", edge_type="FULFILLED_BY")
+        # ── Invoices ──
+        for r in _safe_rows(conn, "invoices"):
+            G.add_node(f"INV:{r['invoice_id']}",
+                       node_type="Invoice",
+                       label=f"Invoice {r['invoice_id']}",
+                       **{k: r[k] for k in r.keys()})
+            if r['delivery_id']:
+                G.add_edge(f"D:{r['delivery_id']}", f"INV:{r['invoice_id']}",
+                           label="INVOICED_AS", edge_type="INVOICED_AS")
+            if r['order_id']:
+                G.add_edge(f"SO:{r['order_id']}", f"INV:{r['invoice_id']}",
+                           label="BILLED_AS", edge_type="BILLED_AS")
 
-    # ── Invoices ──
-    for r in rows("SELECT * FROM invoices"):
-        G.add_node(f"INV:{r['invoice_id']}",
-                   node_type="Invoice",
-                   label=f"Invoice {r['invoice_id']}",
-                   **{k: r[k] for k in r.keys()})
-        if r['delivery_id']:
-            G.add_edge(f"D:{r['delivery_id']}", f"INV:{r['invoice_id']}",
-                       label="INVOICED_AS", edge_type="INVOICED_AS")
-        if r['order_id']:
-            G.add_edge(f"SO:{r['order_id']}", f"INV:{r['invoice_id']}",
-                       label="BILLED_AS", edge_type="BILLED_AS")
+        # ── Payments ──
+        for r in _safe_rows(conn, "payments"):
+            G.add_node(f"PAY:{r['payment_id']}",
+                       node_type="Payment",
+                       label=f"Payment {r['payment_id']}",
+                       **{k: r[k] for k in r.keys()})
+            if r['invoice_id']:
+                G.add_edge(f"INV:{r['invoice_id']}", f"PAY:{r['payment_id']}",
+                           label="PAID_VIA", edge_type="PAID_VIA")
 
-    # ── Payments ──
-    for r in rows("SELECT * FROM payments"):
-        G.add_node(f"PAY:{r['payment_id']}",
-                   node_type="Payment",
-                   label=f"Payment {r['payment_id']}",
-                   **{k: r[k] for k in r.keys()})
-        if r['invoice_id']:
-            G.add_edge(f"INV:{r['invoice_id']}", f"PAY:{r['payment_id']}",
-                       label="PAID_VIA", edge_type="PAID_VIA")
-
-    conn.close()
     return G
 
 def get_initial_subgraph(G: nx.DiGraph, limit: int = 30) -> nx.DiGraph:
@@ -192,6 +207,9 @@ def graph_to_json(G: nx.DiGraph) -> dict:
 
     rf_edges = []
     for src, dst, edata in G.edges(data=True):
+        # Colour edges based on source node type
+        src_type = G.nodes[src].get("node_type", "") if src in G else ""
+        src_color = NODE_STYLES.get(src_type, {"color": "#3a4880"})["color"]
         rf_edges.append({
             "id": f"{src}→{dst}",
             "source": src,
@@ -199,7 +217,7 @@ def graph_to_json(G: nx.DiGraph) -> dict:
             "label": edata.get("label", ""),
             "type": "smoothstep",
             "animated": True,
-            "style": {"stroke": "#6366f1"},
+            "style": {"stroke": src_color, "strokeOpacity": 0.6},
             "labelStyle": {"fill": "#a5b4fc", "fontSize": 10},
         })
 

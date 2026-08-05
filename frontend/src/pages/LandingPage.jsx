@@ -1,5 +1,6 @@
-// LandingPage.jsx — SaaS marketing homepage
+// LandingPage.jsx — SaaS marketing homepage with animations
 import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef } from 'react'
 
 const FEATURES = [
   {
@@ -40,11 +41,40 @@ const STEPS = [
   { num: '03', label: 'Ask anything', desc: 'Use natural language in the chat panel to surface insights from your entire dataset.' },
 ]
 
+function useScrollReveal() {
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('revealed')
+            observer.unobserve(entry.target)
+          }
+        })
+      },
+      { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
+    )
+
+    // Observe all children with .reveal class
+    el.querySelectorAll('.reveal').forEach(child => observer.observe(child))
+
+    return () => observer.disconnect()
+  }, [])
+
+  return ref
+}
+
 export default function LandingPage() {
   const navigate = useNavigate()
+  const scrollRef = useScrollReveal()
 
   return (
-    <div className="landing">
+    <div className="landing" ref={scrollRef}>
 
       {/* ── NAV ── */}
       <nav className="landing-nav">
@@ -63,6 +93,11 @@ export default function LandingPage() {
       {/* ── HERO ── */}
       <section className="landing-hero">
         <div className="landing-hero-bg-grid" />
+
+        {/* Animated gradient orbs */}
+        <div className="landing-hero-orb landing-hero-orb--1" />
+        <div className="landing-hero-orb landing-hero-orb--2" />
+
         <div className="landing-hero-content">
           <div className="landing-eyebrow">Business Intelligence, Reimagined</div>
 
@@ -142,7 +177,7 @@ export default function LandingPage() {
           { val: '<1s', label: 'Query latency' },
           { val: '100%', label: 'Local & private' },
         ].map(s => (
-          <div className="landing-stat" key={s.label}>
+          <div className="landing-stat reveal" key={s.label}>
             <span className="landing-stat-val">{s.val}</span>
             <span className="landing-stat-label">{s.label}</span>
           </div>
@@ -151,13 +186,13 @@ export default function LandingPage() {
 
       {/* ── HOW IT WORKS ── */}
       <section className="landing-section" id="how-it-works">
-        <div className="landing-section-header">
+        <div className="landing-section-header reveal">
           <div className="landing-eyebrow">How it works</div>
           <h2 className="landing-section-title">Three steps to graph intelligence</h2>
         </div>
         <div className="landing-steps">
           {STEPS.map((step) => (
-            <div className="landing-step" key={step.num}>
+            <div className="landing-step reveal" key={step.num}>
               <div className="landing-step-num">{step.num}</div>
               <h3 className="landing-step-label">{step.label}</h3>
               <p className="landing-step-desc">{step.desc}</p>
@@ -168,13 +203,13 @@ export default function LandingPage() {
 
       {/* ── FEATURES ── */}
       <section className="landing-section" id="features">
-        <div className="landing-section-header">
+        <div className="landing-section-header reveal">
           <div className="landing-eyebrow">Features</div>
           <h2 className="landing-section-title">Everything you need to understand your data</h2>
         </div>
         <div className="landing-features-grid">
           {FEATURES.map((f) => (
-            <div className="landing-feature-card" key={f.title}>
+            <div className="landing-feature-card reveal" key={f.title}>
               <div className="landing-feature-icon">{f.icon}</div>
               <h3 className="landing-feature-title">{f.title}</h3>
               <p className="landing-feature-desc">{f.desc}</p>
@@ -185,11 +220,11 @@ export default function LandingPage() {
 
       {/* ── CTA BAND ── */}
       <section className="landing-cta-band">
-        <h2 className="landing-cta-band-title">Ready to explore your data?</h2>
-        <p className="landing-cta-band-desc">
+        <h2 className="landing-cta-band-title reveal">Ready to explore your data?</h2>
+        <p className="landing-cta-band-desc reveal">
           Try the live demo with sample SAP O2C data, or upload your own file to get started immediately.
         </p>
-        <div className="landing-cta-band-actions">
+        <div className="landing-cta-band-actions reveal">
           <button className="landing-cta-primary" onClick={() => navigate('/app')}>
             Try Demo →
           </button>

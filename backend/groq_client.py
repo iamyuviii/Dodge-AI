@@ -6,6 +6,7 @@ import os
 import sqlite3
 import json
 import re
+import logging
 from pathlib import Path
 from groq import Groq
 from dotenv import load_dotenv
@@ -13,9 +14,17 @@ from graph_builder import get_schema_summary
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+logger = logging.getLogger("nexora.groq")
+
 DB_PATH = Path(__file__).parent / "business.db"
 
 _client: Groq | None = None
+
+# Maximum number of SQL retry attempts when execution fails
+MAX_SQL_RETRIES = 2
+
+# Timeout for Groq API calls (seconds)
+API_TIMEOUT = 30
 
 
 def get_client() -> Groq:
@@ -24,7 +33,7 @@ def get_client() -> Groq:
         api_key = os.getenv("GROQ_API_KEY", "")
         if not api_key or api_key == "your_groq_api_key_here":
             raise ValueError("GROQ_API_KEY is not set. Please add it to .env")
-        _client = Groq(api_key=api_key)
+        _client = Groq(api_key=api_key, timeout=API_TIMEOUT)
     return _client
 
 
@@ -61,6 +70,16 @@ SELECT p.product_name, COUNT(i.invoice_id)   as num_invoices FROM products p JOI
 
 Example 2: "Trace the full flow of billing document INV001"
 SELECT so.order_id, d.delivery_id, i.invoice_id, p.payment_id FROM invoices i LEFT JOIN sales_orders so ON i.order_id = so.order_id LEFT JOIN deliveries d ON i.delivery_id = d.delivery_id LEFT JOIN payments p ON i.invoice_id = p.invoice_id WHERE i.invoice_id = 'INV001';
+"""
+
+SQL_FIX_PROMPT = f"""You are an expert SQLite query fixer.
+
+{SCHEMA}
+
+The user asked a question and a SQL query was generated, but it failed with an error.
+Your job is to fix the SQL query so it executes correctly.
+Output ONLY the corrected SQL query — no explanation, no markdown fences.
+If the query is unfixable, output EXACTLY: CANNOT_ANSWER
 """
 
 ANSWER_PROMPT = """You are a helpful business data analyst assistant.
@@ -105,16 +124,42 @@ def _generate_sql(message: str) -> str:
     ])
 
 
+def _fix_sql(original_question: str, broken_sql: str, error: str) -> str:
+    """Ask the LLM to fix a broken SQL query."""
+    return _chat([
+        {"role": "system", "content": SQL_FIX_PROMPT},
+        {"role": "user", "content": (
+            f"Original question: {original_question}\n\n"
+            f"Generated SQL:\n{broken_sql}\n\n"
+            f"Error:\n{error}\n\n"
+            f"Please fix this query."
+        )},
+    ])
+
+
+def _clean_sql(raw: str) -> str:
+    """Strip markdown fences and extraneous formatting from LLM-generated SQL."""
+    sql = raw.strip()
+    # Remove ```sql ... ``` blocks
+    match = re.search(r"```[a-zA-Z]*\n?(.*?)\n?```", sql, re.DOTALL)
+    if match:
+        sql = match.group(1).strip()
+    else:
+        sql = re.sub(r"```[a-zA-Z]*", "", sql).strip().strip("`")
+    # Remove leading/trailing semicolons and whitespace
+    sql = sql.strip().rstrip(";").strip()
+    return sql
+
+
 def _execute_sql(sql: str) -> tuple[list[dict], str | None]:
     """Execute SQL and return (rows_as_dicts, error_or_None)."""
     if not DB_PATH.exists():
         return [], "Database not found. Run preprocess.py first."
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cur = conn.execute(sql)
-        rows = [dict(r) for r in cur.fetchall()]
-        conn.close()
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(sql)
+            rows = [dict(r) for r in cur.fetchall()]
         return rows, None
     except Exception as e:
         return [], str(e)
@@ -132,6 +177,14 @@ def _summarise(question: str, sql: str, rows: list[dict]) -> str:
     ], temperature=0.3)
 
 
+def _is_write_operation(sql: str) -> bool:
+    """Check if SQL contains forbidden write operations."""
+    return bool(re.search(
+        r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b",
+        sql, re.IGNORECASE,
+    ))
+
+
 # ─── public API ───────────────────────────────────────────────────────────────
 
 def answer_query(message: str) -> dict:
@@ -139,7 +192,7 @@ def answer_query(message: str) -> dict:
     Main pipeline:
       1. Guardrail check
       2. SQL generation
-      3. SQL execution
+      3. SQL execution (with retry on failure)
       4. Natural-language answer
     Returns dict with keys: answer, sql, data, error
     """
@@ -165,8 +218,9 @@ def answer_query(message: str) -> dict:
 
     # Step 2: Generate SQL
     try:
-        sql = _generate_sql(message)
+        raw_sql = _generate_sql(message)
     except Exception as e:
+        logger.error("SQL generation failed: %s", e)
         return {
             "answer": "Failed to generate a query. Please try rephrasing.",
             "sql": None,
@@ -174,14 +228,7 @@ def answer_query(message: str) -> dict:
             "error": str(e),
         }
 
-    # Clean up potential markdown fences (model might still wrap)
-    sql = sql.strip()
-    match = re.search(r"```[a-zA-Z]*\n?(.*?)\n?```", sql, re.DOTALL)
-    if match:
-        sql = match.group(1).strip()
-    else:
-        sql = re.sub(r"```[a-zA-Z]*", "", sql).strip().strip("`")
-    sql = sql.strip()
+    sql = _clean_sql(raw_sql)
 
     if sql.upper().startswith("CANNOT_ANSWER"):
         return {
@@ -195,8 +242,7 @@ def answer_query(message: str) -> dict:
         }
 
     # Safety: block write operations
-    if re.search(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b",
-                 sql, re.IGNORECASE):
+    if _is_write_operation(sql):
         return {
             "answer": "That type of operation is not allowed.",
             "sql": None,
@@ -204,10 +250,31 @@ def answer_query(message: str) -> dict:
             "error": "Write operation blocked",
         }
 
-    # Step 3: Execute
+    # Step 3: Execute (with retry)
     rows, sql_error = _execute_sql(sql)
+
     if sql_error:
-        # Try to recover by asking the LLM to fix the SQL
+        logger.warning("SQL execution failed, attempting retry. Error: %s", sql_error)
+        for attempt in range(MAX_SQL_RETRIES):
+            try:
+                fixed_raw = _fix_sql(message, sql, sql_error)
+                fixed_sql = _clean_sql(fixed_raw)
+
+                if fixed_sql.upper().startswith("CANNOT_ANSWER"):
+                    break
+
+                if _is_write_operation(fixed_sql):
+                    break
+
+                rows, sql_error = _execute_sql(fixed_sql)
+                if not sql_error:
+                    sql = fixed_sql
+                    logger.info("SQL retry %d succeeded.", attempt + 1)
+                    break
+            except Exception as e:
+                logger.warning("SQL retry %d failed: %s", attempt + 1, e)
+
+    if sql_error:
         return {
             "answer": f"The query encountered an error: {sql_error}. Please try rephrasing.",
             "sql": sql,
@@ -219,6 +286,7 @@ def answer_query(message: str) -> dict:
     try:
         answer = _summarise(message, sql, rows)
     except Exception as e:
+        logger.error("Summarisation failed: %s", e)
         answer = f"Query returned {len(rows)} result(s) but narrative generation failed."
 
     return {

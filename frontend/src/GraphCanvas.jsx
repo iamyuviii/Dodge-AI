@@ -1,5 +1,5 @@
-// GraphCanvas.jsx — Dagre-layouted interactive graph visualization
-import { useCallback, useEffect, useRef, useState } from 'react'
+// GraphCanvas.jsx — Dagre-layouted interactive graph visualization with search
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import ReactFlow, {
   Background,
   Controls,
@@ -47,14 +47,14 @@ function styledEdges(edges) {
     ...e,
     type: 'smoothstep',
     animated: false,
-    style: { stroke: '#3a4880', strokeWidth: 1.5 },
+    style: { stroke: e.style?.stroke || '#3a4880', strokeWidth: 1.5, strokeOpacity: e.style?.strokeOpacity || 0.6 },
     labelStyle: { fill: '#64748b', fontSize: 10, fontFamily: 'Inter, sans-serif' },
     labelBgStyle: { fill: '#0f1526', fillOpacity: 0.85 },
     labelBgPadding: [4, 6],
     labelBgBorderRadius: 4,
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: '#3a4880',
+      color: e.style?.stroke || '#3a4880',
       width: 12,
       height: 12,
     },
@@ -71,10 +71,49 @@ export default function GraphCanvas() {
   const [activeFilter, setActiveFilter] = useState('All')
   const [layoutDir, setLayoutDir] = useState('LR')
   const [toast, setToast] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
 
   const allNodesRef = useRef([])
   const allEdgesRef = useRef([])
   const rfInstance  = useRef(null)
+
+  // ── Compute filter counts ─────────────────────────────────────────────────
+  const filterCounts = useMemo(() => {
+    const counts = {}
+    allNodesRef.current.forEach(n => {
+      const t = n.data?.node_type || 'Unknown'
+      counts[t] = (counts[t] || 0) + 1
+    })
+    return counts
+  }, [nodes]) // re-compute when nodes change
+
+  // ── Search results ────────────────────────────────────────────────────────
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return []
+    const q = searchQuery.toLowerCase()
+    return allNodesRef.current
+      .filter(n => {
+        const label = (n.data?.label || '').toLowerCase()
+        const type = (n.data?.node_type || '').toLowerCase()
+        const id = (n.id || '').toLowerCase()
+        return label.includes(q) || type.includes(q) || id.includes(q)
+      })
+      .slice(0, 8)
+  }, [searchQuery, nodes])
+
+  const focusNode = useCallback((nodeId) => {
+    const node = allNodesRef.current.find(n => n.id === nodeId)
+    if (node && rfInstance.current) {
+      rfInstance.current.fitView({
+        nodes: [{ id: nodeId }],
+        padding: 0.5,
+        duration: 600,
+      })
+      setInspectorId(nodeId)
+      setSearchQuery('')
+    }
+  }, [])
 
   // ── Callbacks ──────────────────────────────────────────────────────────────
 
@@ -83,9 +122,10 @@ export default function GraphCanvas() {
   }, [])
 
   const handleExpandNode = useCallback(async (data) => {
-    if (!data.nodeId) return
+    const nodeId = data.nodeId || data.nodeId
+    if (!nodeId) return
     try {
-      const resp = await axios.get(`/api/graph/expand/${encodeURIComponent(data.nodeId)}`)
+      const resp = await axios.get(`/api/graph/expand/${encodeURIComponent(nodeId)}`)
       const { nodes: newRaw, edges: newEdgesRaw } = resp.data
 
       const existingNodeIds = new Set(allNodesRef.current.map(n => n.id))
@@ -137,6 +177,13 @@ export default function GraphCanvas() {
     axios.get('/api/graph')
       .then(resp => {
         const { nodes: rawNodes, edges: rawEdges } = resp.data
+
+        if (!rawNodes.length) {
+          setLoading(false)
+          setError('empty')
+          return
+        }
+
         const enriched  = rawNodes.map(injectCbs)
         const edgesStyled = styledEdges(rawEdges)
 
@@ -195,6 +242,18 @@ export default function GraphCanvas() {
     </div>
   )
 
+  if (error === 'empty') return (
+    <div className="graph-panel">
+      <div className="graph-loading">
+        <div className="empty-state">
+          <div className="empty-state-icon">⬡</div>
+          <h3>No data loaded</h3>
+          <p>Upload a dataset or run the preprocessor to seed demo data.</p>
+        </div>
+      </div>
+    </div>
+  )
+
   if (error) return (
     <div className="graph-panel">
       <div className="graph-loading">
@@ -237,6 +296,36 @@ export default function GraphCanvas() {
         {/* ── Top toolbar (Panel) ── */}
         <Panel position="top-left">
           <div className="graph-top-bar">
+            {/* Search bar */}
+            <div className="graph-search-wrap">
+              <input
+                className="graph-search"
+                type="text"
+                placeholder="Search nodes…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+              />
+              {searchFocused && searchResults.length > 0 && (
+                <div className="graph-search-results">
+                  {searchResults.map(n => (
+                    <button
+                      key={n.id}
+                      className="graph-search-result"
+                      onMouseDown={() => focusNode(n.id)}
+                    >
+                      <span className="graph-search-result-icon" style={{ color: n.data?.color }}>
+                        {n.data?.icon || '⬡'}
+                      </span>
+                      <span className="graph-search-result-label">{n.data?.label}</span>
+                      <span className="graph-search-result-type">{n.data?.node_type}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Entity filter chips */}
             <div className="filter-group">
               {FILTERS.map(f => (
@@ -251,6 +340,9 @@ export default function GraphCanvas() {
                   onClick={() => setActiveFilter(f)}
                 >
                   {f}
+                  {f !== 'All' && filterCounts[f] ? (
+                    <span className="filter-chip-count">{filterCounts[f]}</span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -294,6 +386,9 @@ export default function GraphCanvas() {
                   <span className="legend-dot" style={{ background: color }} />
                   <span className="legend-icon">{icon}</span>
                   <span className="legend-type">{type}</span>
+                  {filterCounts[type] ? (
+                    <span className="legend-count">{filterCounts[type]}</span>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -303,18 +398,16 @@ export default function GraphCanvas() {
 
       {/* Node inspector */}
       {inspectorId && (
-        <NodeInspector nodeId={inspectorId} onClose={() => setInspectorId(null)} />
+        <NodeInspector
+          nodeId={inspectorId}
+          onClose={() => setInspectorId(null)}
+          onExpand={(data) => handleExpandNode({ nodeId: data.nodeId })}
+        />
       )}
 
       {/* Toast Notification */}
       {toast && (
-        <div style={{
-          position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(56, 189, 248, 0.95)', color: '#fff', padding: '10px 20px',
-          borderRadius: 8, fontSize: 13, zIndex: 1000, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-          backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)',
-          animation: 'popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
-        }}>
+        <div className="graph-toast">
           {toast}
         </div>
       )}

@@ -6,10 +6,13 @@ we read each sheet into a pandas DataFrame, clean it, and
 store it into SQLite. The script is idempotent (safe to re-run).
 """
 
+import logging
 import os
 import sqlite3
 import pandas as pd
 from pathlib import Path
+
+logger = logging.getLogger("nexora.preprocess")
 
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -211,22 +214,22 @@ def smart_load(sheets: dict[str, pd.DataFrame], conn: sqlite3.Connection):
         table = SHEET_TABLE_MAP.get(sheet_name.lower().strip())
 
         if table:
-            print(f"  Mapping sheet '{sheet_name}' → table '{table}'")
+            logger.info("  Mapping sheet '%s' → table '%s'", sheet_name, table)
             # Write to the matched table (replace existing rows)
             try:
                 df.to_sql(table, conn, if_exists="replace", index=False)
-                print(f"    ✓ Loaded {len(df)} rows into '{table}'")
+                logger.info("    ✓ Loaded %d rows into '%s'", len(df), table)
             except Exception as e:
-                print(f"    ✗ Failed to load '{table}': {e}")
+                logger.error("    ✗ Failed to load '%s': %s", table, e)
         else:
             # Write as-is with the sheet name as table name
             raw_table = clean_col(sheet_name)
-            print(f"  Sheet '{sheet_name}' → raw table '{raw_table}'")
+            logger.info("  Sheet '%s' → raw table '%s'", sheet_name, raw_table)
             try:
                 df.to_sql(raw_table, conn, if_exists="replace", index=False)
-                print(f"    ✓ Loaded {len(df)} rows into '{raw_table}'")
+                logger.info("    ✓ Loaded %d rows into '%s'", len(df), raw_table)
             except Exception as e:
-                print(f"    ✗ Failed: {e}")
+                logger.error("    ✗ Failed: %s", e)
 
 
 def seed_demo_data(conn: sqlite3.Connection):
@@ -234,7 +237,7 @@ def seed_demo_data(conn: sqlite3.Connection):
     Populate tables with a concise demo dataset (~28 graph nodes)
     that still illustrates complete and incomplete business flows.
     """
-    print("  Seeding demo data…")
+    logger.info("  Seeding demo data…")
     cur = conn.cursor()
 
     cur.executescript("""
@@ -287,36 +290,35 @@ def seed_demo_data(conn: sqlite3.Connection):
     INSERT OR IGNORE INTO payments VALUES ('PAY001','INV001','2024-01-28',10425.00,'Wire Transfer','Completed');
     """)
     conn.commit()
-    print("  ✓ Demo data seeded.")
+    logger.info("  ✓ Demo data seeded.")
 
 
 # ─── main ─────────────────────────────────────────────────────────────────────
 
 
 def run():
-    print("=== Data Preprocessor ===")
-    print(f"DB path: {DB_PATH}")
+    logger.info("=== Data Preprocessor ===")
+    logger.info("DB path: %s", DB_PATH)
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.executescript(CREATE_SCHEMA)
-    conn.commit()
-    print("✓ Schema created")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executescript(CREATE_SCHEMA)
+        conn.commit()
+        logger.info("✓ Schema created")
 
-    dataset = find_dataset()
+        dataset = find_dataset()
 
-    if dataset:
-        print(f"Found dataset: {dataset.name}")
-        if dataset.suffix in (".xlsx", ".xls"):
-            sheets = read_excel_sheets(dataset)
+        if dataset:
+            logger.info("Found dataset: %s", dataset.name)
+            if dataset.suffix in (".xlsx", ".xls"):
+                sheets = read_excel_sheets(dataset)
+            else:
+                sheets = read_csv(dataset)
+            smart_load(sheets, conn)
         else:
-            sheets = read_csv(dataset)
-        smart_load(sheets, conn)
-    else:
-        print("No dataset file found in data/ — seeding demo data.")
-        seed_demo_data(conn)
+            logger.info("No dataset file found in data/ — seeding demo data.")
+            seed_demo_data(conn)
 
-    conn.close()
-    print("=== Done ===")
+    logger.info("=== Done ===")
 
 
 if __name__ == "__main__":

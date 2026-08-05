@@ -1,5 +1,5 @@
-// ChatPanel.jsx — Conversational query interface
-import { useState, useRef, useEffect } from 'react'
+// ChatPanel.jsx — Conversational query interface with copy, clear, timestamps
+import { useState, useRef, useEffect, useCallback } from 'react'
 import axios from 'axios'
 
 const SUGGESTIONS = [
@@ -7,6 +7,10 @@ const SUGGESTIONS = [
   'Trace the full flow of billing document INV001 (Sales Order → Delivery → Invoice → Payment)',
   'Which customers have the highest order value?'
 ]
+
+function formatTime(date) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 
 function TypingIndicator() {
   return (
@@ -39,19 +43,53 @@ function DataTable({ rows }) {
   const cols = Object.keys(rows[0])
   return (
     <div className="data-table-wrap">
+      <div className="data-table-header">
+        <span className="data-table-count">{rows.length} row{rows.length !== 1 ? 's' : ''}</span>
+      </div>
       <table className="data-table">
         <thead>
           <tr>{cols.map(c => <th key={c}>{c}</th>)}</tr>
         </thead>
         <tbody>
           {rows.slice(0, 20).map((row, i) => (
-            <tr key={i}>
+            <tr key={i} className={i % 2 === 1 ? 'striped' : ''}>
               {cols.map(c => <td key={c} title={String(row[c])}>{String(row[c] ?? '—')}</td>)}
             </tr>
           ))}
         </tbody>
       </table>
+      {rows.length > 20 && (
+        <div className="data-table-footer">Showing 20 of {rows.length} rows</div>
+      )}
     </div>
+  )
+}
+
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Fallback
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }, [text])
+
+  return (
+    <button className="copy-btn" onClick={handleCopy} title="Copy to clipboard">
+      {copied ? '✓ Copied' : '⎘ Copy'}
+    </button>
   )
 }
 
@@ -62,6 +100,7 @@ export default function ChatPanel({ onHighlightsChange }) {
       content: "Hello! I'm your business data analyst. Ask me anything about your sales orders, deliveries, invoices, and payments.",
       sql: null,
       data: [],
+      timestamp: new Date(),
     }
   ])
   const [input, setInput]   = useState('')
@@ -73,11 +112,22 @@ export default function ChatPanel({ onHighlightsChange }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
+  const clearChat = useCallback(() => {
+    setMessages([{
+      role: 'assistant',
+      content: "Conversation cleared. Ask me anything about your business data!",
+      sql: null,
+      data: [],
+      timestamp: new Date(),
+    }])
+    if (onHighlightsChange) onHighlightsChange(new Set())
+  }, [onHighlightsChange])
+
   const sendMessage = async (text) => {
     const msg = (text || input).trim()
     if (!msg || loading) return
 
-    setMessages(prev => [...prev, { role: 'user', content: msg }])
+    setMessages(prev => [...prev, { role: 'user', content: msg, timestamp: new Date() }])
     setInput('')
     setLoading(true)
 
@@ -89,6 +139,7 @@ export default function ChatPanel({ onHighlightsChange }) {
         content: answer,
         sql,
         data: data || [],
+        timestamp: new Date(),
       }])
 
       if (onHighlightsChange) {
@@ -116,6 +167,7 @@ export default function ChatPanel({ onHighlightsChange }) {
         sql: null,
         data: [],
         isError: true,
+        timestamp: new Date(),
       }])
     } finally {
       setLoading(false)
@@ -140,10 +192,13 @@ export default function ChatPanel({ onHighlightsChange }) {
       <div className="chat-header">
         <div className="chat-header-top">
           <div className="chat-header-icon">🤖</div>
-          <div>
+          <div style={{ flex: 1 }}>
             <div className="chat-header-name">Data Intelligence Assistant</div>
             <div className="chat-header-model">Powered by Groq · LLaMA 3 70B</div>
           </div>
+          <button className="chat-clear-btn" onClick={clearChat} title="Clear conversation">
+            ⟲ Clear
+          </button>
         </div>
         <div className="chat-header-desc">
           Ask questions in natural language. Answers are grounded in your business dataset.
@@ -176,10 +231,14 @@ export default function ChatPanel({ onHighlightsChange }) {
             <div className={`message-bubble${msg.isError ? ' error-notice' : ''}`}>
               {msg.content}
             </div>
+            {msg.role === 'assistant' && !msg.isError && msg.content && (
+              <CopyButton text={msg.content} />
+            )}
             {msg.sql && <SqlAccordion sql={msg.sql} />}
             {msg.data?.length > 0 && <DataTable rows={msg.data} />}
             <div className="message-meta">
               {msg.role === 'assistant' ? '🤖 Assistant' : '👤 You'}
+              {msg.timestamp && <span className="message-time">{formatTime(msg.timestamp)}</span>}
             </div>
           </div>
         ))}
@@ -211,7 +270,7 @@ export default function ChatPanel({ onHighlightsChange }) {
             {loading ? '⏳' : '➤'}
           </button>
         </div>
-        <div className="chat-hint">Enter to send · Shift+Enter for new line</div>
+        <div className="chat-hint">Enter to send · Shift+Enter for new line · / to focus</div>
       </div>
     </div>
   )

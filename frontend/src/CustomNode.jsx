@@ -1,6 +1,6 @@
-// CustomNode.jsx — Redesigned React Flow node (larger, cleaner, less congested)
+// CustomNode.jsx — Redesigned React Flow node with accent strip and connection count
 import { Handle, Position } from 'reactflow'
-import {memo, useContext} from 'react'
+import {memo, useContext, useState} from 'react'
 import { HighlightContext } from './pages/AppPage'
 
 const NODE_COLORS = {
@@ -18,14 +18,30 @@ const DEFAULT_COLOR = { bg: '#64748b', light: '#64748b1a', border: '#64748b33' }
 
 function CustomNode({ data, selected, id }) {
   const clr = NODE_COLORS[data.node_type] || DEFAULT_COLOR
+  const [expanding, setExpanding] = useState(false)
 
   const highlightIds = useContext(HighlightContext)
   const isHighlighted = highlightIds?.has(id) || false
 
-  // Top 2 meta rows only, skip nulls
+  // Count connections from meta (edges are not directly available in node data)
+  const connectionCount = (data.meta?.in_degree || 0) + (data.meta?.out_degree || 0)
+
+  // Top 2 meta rows only, skip nulls and internal fields
+  const hiddenKeys = new Set(['node_type', 'label', 'in_degree', 'out_degree'])
   const metaRows = Object.entries(data.meta || {})
-    .filter(([, v]) => v && v !== 'None' && v !== 'null')
+    .filter(([k, v]) => v && v !== 'None' && v !== 'null' && !hiddenKeys.has(k))
     .slice(0, 2)
+
+  const handleExpand = async (e) => {
+    e.stopPropagation()
+    if (expanding) return
+    setExpanding(true)
+    try {
+      await data.onExpand?.(data)
+    } finally {
+      setExpanding(false)
+    }
+  }
 
   return (
     <div
@@ -37,6 +53,9 @@ function CustomNode({ data, selected, id }) {
       }}
       onClick={() => data.onSelect && data.onSelect(data)}
     >
+      {/* Colored left accent strip */}
+      <div className="node-strip" style={{ background: clr.bg }} />
+
       <Handle
         type="target"
         position={Position.Left}
@@ -68,11 +87,12 @@ function CustomNode({ data, selected, id }) {
 
       <div className="node-footer">
         <button
-          className="node-expand-btn"
-          onClick={e => { e.stopPropagation(); data.onExpand && data.onExpand(data) }}
+          className={`node-expand-btn${expanding ? ' loading' : ''}`}
+          onClick={handleExpand}
           title="Expand neighbours"
+          disabled={expanding}
         >
-          ⊕ expand
+          {expanding ? '⟳ loading…' : '⊕ expand'}
         </button>
         <button
           className="node-inspect-btn"

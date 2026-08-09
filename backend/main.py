@@ -1,12 +1,4 @@
-"""
-main.py — FastAPI backend server.
-Endpoints:
-  GET  /api/graph          → full graph JSON
-  GET  /api/graph/expand   → neighbors of a node
-  POST /api/chat           → LLM-powered natural-language query
-  GET  /api/health         → health check
-  POST /api/upload         → upload CSV/Excel and rebuild graph
-"""
+
 
 import logging
 import re

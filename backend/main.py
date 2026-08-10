@@ -16,7 +16,6 @@ from graph_builder import build_graph, graph_to_json, NODE_STYLES, get_initial_s
 from groq_client import answer_query
 import preprocess
 
-# ─── Logging ──────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +27,6 @@ logger = logging.getLogger("nexora")
 BASE_DIR = Path(__file__).parent
 DB_PATH  = BASE_DIR / "business.db"
 
-# ─── Graph cache ──────────────────────────────────────────────────────────────
 
 _graph: nx.DiGraph | None = None
 
@@ -40,7 +38,6 @@ def get_graph() -> nx.DiGraph:
     return _graph
 
 
-# ─── Lifespan (replaces deprecated @app.on_event) ────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -69,7 +66,6 @@ app.add_middleware(
 )
 
 
-# ─── Response models ─────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):
     status: str
@@ -101,7 +97,6 @@ class ReloadResponse(BaseModel):
     edges: int
 
 
-# ─── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/health", response_model=HealthResponse)
 def health():

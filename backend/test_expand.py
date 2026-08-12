@@ -10,14 +10,13 @@ def test():
     
     expandable = []
     
-    # Let's test expanding ALL nodes in the initial graph
+ 
     for n in nodes:
         node_id = n["id"]
         url = "http://localhost:8000/api/graph/expand/" + urllib.parse.quote(node_id)
         req2 = urllib.request.urlopen(url)
         data2 = json.loads(req2.read())
-        
-        # Check if there are any nodes in the response that aren't in the initial graph
+      
         initial_ids = {x["id"] for x in nodes}
         new_ids = {x["id"] for x in data2.get("nodes", [])}
         
